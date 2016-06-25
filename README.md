@@ -33,7 +33,6 @@ As you optimize code, you will begin to develop intuitions about what C++ code i
 
 But tomorrow a smart compiler writer could make all this stuff false.
 
-Better to actually test.
 
 ---
 
@@ -86,7 +85,7 @@ BENCHMARK_MAIN();
 
 Build sequence:
 
-```make
+```makefile
 CXX=clang++
 
 all: run_benchmarks.x run_benchmarks.s
@@ -101,7 +100,7 @@ run_benchmarks.s: run_benchmarks.cpp
     $(CXX) $(CPPFLAGS) -S -masm=intel $<
 
 clean:
-    rm -f *.x *.s
+    rm -f *.x *.s *.o
 ```
 
 ---
@@ -205,6 +204,19 @@ while (state.KeepRunning())
 ```
 ---
 
+### Stop compiler optimizations:
+
+However, `benchmark::DoNotOptimize` forces the result to be stored into RAM, which takes time over register storage:
+
+```cpp
+template <class Tp>
+inline BENCHMARK_ALWAYS_INLINE void DoNotOptimize(Tp const& value) {
+    asm volatile("" : "+m" (const_cast<Tp&>(value)));
+}
+```
+
+---
+
 ### Stop compiler optimizations
 
 Even then we might still have to play tricks on the compiler. One of my favorites: Write the result to `/dev/null` outside the loop:
@@ -270,6 +282,7 @@ It's often useful to find out how fast your algorithm is in float, double, and l
 ---
 
 ### Templated Benchmarks
+
 
 ```cpp
 template<typename Real>
@@ -381,7 +394,7 @@ BM_FibRecursive/32            24372253 ns   24320000 ns         25
 
 Can we empirically determine the asymptotic complexity of the recursive Fibonacci number calculation?
 
-No, we can't get enough data points because it grows too fast. However . . .
+Pretty much . . . !
 
 
 ---
@@ -428,9 +441,9 @@ It erroneously labels the algorithm as cubic; though we can see the fit is not t
 
 ### Passing a lambda to `Complexity()`
 
-If google/benchmark determines a bizarre fitting, you are free to specify the asymptotic complexity yourself, and have google/benchmark determine goodness of fit.
+If google/benchmark only tries to fit to the most common complexity classes. You are free to specify the asymptotic complexity yourself, and have google/benchmark determine goodness of fit.
 
-The complexity of the recursive Fibonacci algorithm is $$\phi^n$$, where $$\phi := (1+\sqrt{5})/2$$ is the golden ratio.
+The complexity of the recursive Fibonacci algorithm is $$\phi^n$$, where $$\phi := (1+\sqrt{5})/2$$ is the golden ratio, so let's use $$\phi^n$$ as a lambda . . .
 
 
 ---
@@ -480,6 +493,110 @@ Complexity(benchmark::oNCubed);
 ```
 
 
+---
+
+### Benchmarking data transfer
+
+To get data about data transfer rates, use `state.SetBytesProcessed`[^1]:
+
+
+```cpp
+static void BM_memcpy(benchmark::State& state) {
+  char* src = new char[state.range_x()]; char* dst = new char[state.range_x()];
+  memset(src, 'x', state.range_x());
+  while (state.KeepRunning()) {
+    memcpy(dst, src, state.range_x());
+  }
+  state.SetBytesProcessed(int64_t(state.iterations()) *
+                          int64_t(state.range_x()));
+  delete[] src; delete[] dst;
+}
+BENCHMARK(BM_memcpy)->Range(8, 8<<10);
+```
+
+[^1]: Taken directly from the google/benchmark docs.
+
+
+---
+
+
+### Benchmarking data transfer
+
+`state.SetBytesProcessed` adds another column to the output:
+
+```bash
+Run on (1 X 2300 MHz CPU )
+2016-06-25 19:25:23
+Benchmark               Time           CPU Iterations
+-----------------------------------------------------
+BM_memcpy/8             9 ns          9 ns   87500000   883.032MB/s
+BM_memcpy/16            9 ns          9 ns   79545455   1.70305GB/s
+BM_memcpy/32            9 ns          8 ns   79545455   3.50686GB/s
+BM_memcpy/64           11 ns         11 ns   62500000   5.35243GB/s
+BM_memcpy/128          13 ns         13 ns   53030303   8.97969GB/s
+BM_memcpy/256          16 ns         16 ns   44871795   15.1964GB/s
+BM_memcpy/512          19 ns         20 ns   36458333   24.4167GB/s
+BM_memcpy/1024         25 ns         25 ns   28225806   38.6756GB/s
+BM_memcpy/2k           50 ns         50 ns   10000000    38.147GB/s
+BM_memcpy/4k          122 ns        122 ns    5833333   31.2534GB/s
+BM_memcpy/8k          220 ns        220 ns    3240741    34.726GB/s
+```
+
+
+---
+
+### Running a subset of your benchmarks:
+
+
+Each benchmark takes ~1 second to run. If you need to analyze only one of the benchmarks, use the `--benchmark_filter` option:
+
+```bash
+./run_benchmarks.x --benchmark_filter=BM_memcpy/32
+Run on (1 X 2300 MHz CPU )
+2016-06-25 19:34:24
+Benchmark              Time           CPU Iterations
+----------------------------------------------------
+BM_memcpy/32          11 ns         11 ns   79545455   2.76944GB/s
+BM_memcpy/32k       2181 ns       2185 ns     324074   13.9689GB/s
+BM_memcpy/32          12 ns         12 ns   54687500   2.46942GB/s
+BM_memcpy/32k       1834 ns       1837 ns     357143   16.6145GB/s
+```
+
+---
+
+### Error bars
+
+In general you will get a pretty good idea about the standard deviation of the measurements just by running it a few times. However, if you want error bars, just specify the number of times you want your benchmark repeated:
+
+```cpp
+BENCHMARK(BM_Pow)->Repetitions(12);
+```
+
+---
+
+### Error bars
+
+
+```cpp
+Run on (1 X 2300 MHz CPU )
+2016-06-25 19:57:40
+Benchmark                         Time           CPU Iterations
+---------------------------------------------------------------
+BM_Pow/repeats:12                70 ns         70 ns   10294118
+BM_Pow/repeats:12                73 ns         73 ns   10294118
+BM_Pow/repeats:12                71 ns         71 ns   10294118
+BM_Pow/repeats:12                70 ns         70 ns   10294118
+BM_Pow/repeats:12                71 ns         71 ns   10294118
+BM_Pow/repeats:12                72 ns         72 ns   10294118
+BM_Pow/repeats:12                73 ns         73 ns   10294118
+BM_Pow/repeats:12                71 ns         71 ns   10294118
+BM_Pow/repeats:12                70 ns         70 ns   10294118
+BM_Pow/repeats:12                73 ns         73 ns   10294118
+BM_Pow/repeats:12                71 ns         71 ns   10294118
+BM_Pow/repeats:12                76 ns         75 ns   10294118
+BM_Pow/repeats:12_mean           72 ns         72 ns   10294118
+BM_Pow/repeats:12_stddev          2 ns          2 ns          0
+```
 
 
 
