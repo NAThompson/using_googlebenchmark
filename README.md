@@ -261,4 +261,225 @@ Benchmark           Time           CPU Iterations
 BM_Pow             80 ns         80 ns    9210526
 ```
 
+---
+
+### Templated Benchmarks
+
+It's often useful to find out how fast your algorithm is in float, double, and long double precision. Google benchmark supports templates without too much code duplication
+
+---
+
+### Templated Benchmarks
+
+```cpp
+template<typename Real>
+static void BM_PowTemplate(benchmark::State& state) {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<Real> dis(1, 10);
+    auto s = dis(gen);
+    auto t = dis(gen);
+    Real y;
+    while (state.KeepRunning()) {
+        benchmark::DoNotOptimize(y = std::pow(s, t));
+    }
+    std::ostream cnull(nullptr);
+    cnull << y;
+}
+BENCHMARK_TEMPLATE(BM_PowTemplate, float);
+BENCHMARK_TEMPLATE(BM_PowTemplate, double);
+BENCHMARK_TEMPLATE(BM_PowTemplate, long double);
+```
+
+---
+
+### Templated Benchmarks
+
+The results are sometimes surprising; for instance double is found to be faster than float:
+
+```bash
+Run on (1 X 2300 MHz CPU )
+2016-06-25 00:07:26
+Benchmark                            Time           CPU Iterations
+------------------------------------------------------------------
+BM_PowTemplate<float>              136 ns        127 ns    5468750
+BM_PowTemplate<double>              95 ns         94 ns    7000000
+BM_PowTemplate<long double>        404 ns        403 ns    1699029
+```
+
+---
+
+### View algorithm scaling
+
+Sometimes you need to analysis the scaling properties of your algorithm. Let's try an example with an algorithm with terrible scaling: Recursive Fibonnaci numbers:
+
+```cpp
+uint64_t fibr(uint64_t n)
+{
+  if (n == 0)
+    return 0;
+
+  if (n == 1)
+    return 1;
+
+  return fibr(n-1)+fibr(n-2);
+}
+```
+
+---
+
+### View algorithm scaling
+
+Our benchmark code is
+
+```cpp
+static void BM_FibRecursive(benchmark::State& state)
+{
+    uint64_t y;
+    while (state.KeepRunning())
+    {
+      benchmark::DoNotOptimize(y = fib1(state.range_x()));
+    }
+    std::ostream cnull(nullptr);
+    cnull << y;
+}
+BENCHMARK(BM_FibRecursive)->RangeMultiplier(2)->Range(1, 1<<5);
+```
+
+
+---
+
+### View algorithm scaling
+
+```cpp
+BENCHMARK(BM_FibRecursive)->RangeMultiplier(2)->Range(1, 1<<5)
+```
+
+will request a benchmark with `state.range_x()` taking values of `[1, 2, 4, 8, 16, 32]`.
+
+---
+
+### View algorithm scaling
+
+
+```bash
+Run on (1 X 2300 MHz CPU )
+2016-06-25 00:38:14
+Benchmark                            Time           CPU Iterations
+------------------------------------------------------------------
+BM_FibRecursive/1                    7 ns          7 ns   83333333
+BM_FibRecursive/2                   15 ns         15 ns   72916667
+BM_FibRecursive/4                   37 ns         37 ns   17156863
+BM_FibRecursive/8                  268 ns        268 ns    2868852
+BM_FibRecursive/16               13420 ns      13392 ns      64815
+BM_FibRecursive/32            24372253 ns   24320000 ns         25
+```
+
+---
+
+### View algorithm scaling
+
+Can we empirically determine the asymptotic complexity of the recursive Fibonacci number calculation?
+
+No, we can't get enough data points because it grows too fast. However . . .
+
+
+---
+
+### View algorithm scaling
+
+google/benchmark will try to figure out the algorithmic scaling, if you ask it to. Example:
+
+```cpp
+static void BM_FibRecursive(benchmark::State& state)
+{
+    uint64_t y;
+    while (state.KeepRunning())
+    {
+      benchmark::DoNotOptimize(y = fib1(state.range_x()));
+    }
+    std::ostream cnull(nullptr);
+    cnull << y;
+    state.SetComplexityN(state.range_x());
+}
+
+BENCHMARK(BM_FibRecursive)->RangeMultiplier(2)->Range(1, 1<<5)->Complexity();
+```
+
+---
+
+### The result?
+
+```bash
+BM_FibRecursive/1                         9 ns          9 ns   72916667
+BM_FibRecursive/2                        19 ns         19 ns   44871795
+BM_FibRecursive/4                        42 ns         43 ns   14112903
+BM_FibRecursive/8                       270 ns        268 ns    2611940
+BM_FibRecursive/16                    11305 ns      11264 ns      54687
+BM_FibRecursive/32                 27569038 ns   27555556 ns         27
+BM_FibRecursive_BigO                 828.24 N^3     827.83 N^3
+BM_FibRecursive_RMS                      31 %         31 %
+```
+
+It erroneously labels the algorithm as cubic; though we can see the fit is not tight.
+
+
+---
+
+### Passing a lambda to `Complexity()`
+
+If google/benchmark determines a bizarre fitting, you are free to specify the asymptotic complexity yourself, and have google/benchmark determine goodness of fit.
+
+The complexity of the recursive Fibonacci algorithm is $$\phi^n$$, where $$\phi := (1+\sqrt{5})/2$$ is the golden ratio.
+
+
+---
+
+### Passing a lambda to `Complexity()`
+
+Syntax:
+
+```cpp
+BENCHMARK(BM_FibRecursive)
+    ->RangeMultiplier(2)
+        ->Range(1, 1<<5)
+           ->Complexity([](int n) {return std::pow((1+std::sqrt(5))/2, n);});
+```
+
+
+---
+
+### Result:
+
+```bash
+BM_FibRecursive/1           9 ns          9 ns   79545455
+BM_FibRecursive/2          19 ns         19 ns   44871795
+BM_FibRecursive/4          37 ns         37 ns   20588235
+BM_FibRecursive/8         228 ns        228 ns    3125000
+BM_FibRecursive/16       9944 ns       9943 ns      60345
+BM_FibRecursive/32   23910141 ns   23866667 ns         30
+BM_FibRecursive_BigO       4.91 f(N)       4.90 f(N)
+BM_FibRecursive_RMS          0 %          0 %
+```
+
+(*Note*: All lambdas are denotes as `f(N)`, so you have to know what you wrote in your source code to understand the scaling.)
+
+---
+
+###  Other tricks:
+
+Standard complexity classes don't need to be passed as lambdas:
+
+```cpp
+Complexity(benchmark::o1);
+Complexity(benchmark::oLogN);
+Complexity(benchmark::oN);
+Complexity(benchmark::oNLogN);
+Complexity(benchmark::oNSquared);
+Complexity(benchmark::oNCubed);
+```
+
+
+
+
 
