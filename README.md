@@ -1,32 +1,10 @@
-# Performance Analysis in C++
-
----
-
-The principle challenge of HPC is *understanding your stack*.
-
----
-
-The *first* challenge is *defining correctness*, and asserting on invariants.
-
----
-
-The *second* challenge is market competitiveness, which is based principally on usability.
-
-- Adaptive numerical algorithms instead of user parameters
-- Progress reporting
-- Widely compatible data formats
-- Curated algorithms, rather than *choice* of algorithms
-
----
-
-The *last* challenge is performance analysis, which is today's topic.
+# Performance Analysis in C++ with google/benchmark
 
 ---
 
 As you optimize code, you will begin to develop intuitions about what C++ code is fast and what is slow
 
 - ``std::array`` is faster than ``std::vector``
-- ``float`` is faster than ``double``
 - ``if`` checks break the pipeline
 - ``std::vector`` is faster than `std::list`
 - ``std::vector::reserve`` is faster than `std::vector::push_back`
@@ -40,27 +18,30 @@ But tomorrow a smart compiler writer could make all this stuff false.
 
 - Call the function repeatedly until statistical confidence is gained about its runtime, and no longer
 - Not get optimized out by the compiler
-- Test multiple inputs for signs of scaling problems
+- Test multiple inputs to determine asymptotic scaling
 - Be usable
 
 ---
 
-## Use google/benchmark!
+# google/benchmark fits the bill
 
-The installation is simple:
+
+---
+
+# Installation
 
 ```bash
 $ git clone https://github.com/google/benchmark.git
-$ mkdir build_benchmark; cd build_benchmark
-build_benchmark$ cmake -DCMAKE_BUILD_TYPE=Release ../benchmark
-build_benchmark$ make -j`nproc`
-build_benchmark$ make test
-build_benchmark$ sudo make install
+$ mkdir build_bm; cd build_bm
+build_bm$ cmake -DCMAKE_BUILD_TYPE=Release ../benchmark
+build_bm$ make -j`nproc`
+build_bm$ make test
+build_bm$ sudo make install
 ```
 
 ---
 
-### google/benchmark minimal working example
+# google/benchmark mwe
 
 ```cpp
 #include <cmath>
@@ -81,13 +62,9 @@ BENCHMARK_MAIN();
 
 ---
 
-### google/benchmark minimal working example
-
-Build sequence:
+# Build sequence:
 
 ```makefile
-CXX=clang++
-
 all: run_benchmarks.x run_benchmarks.s
 
 run_benchmarks.x: run_benchmarks.o
@@ -105,12 +82,10 @@ clean:
 
 ---
 
-### google/benchmark minimal working example
-
-Run:
+# Run a google/benchmark
 
 ```bash
-./run_benchmarks.x
+$ ./run_benchmarks.x
 Run on (4 X 1000 MHz CPU s)
 2016-06-23 17:58:41
 Benchmark           Time           CPU Iterations
@@ -121,11 +96,12 @@ BM_Pow              3 ns          3 ns  264837522
 
 ---
 
-### Stop compiler optimizations
+# Stop compiler optimizations
 
-In fact 3 ns seems a bit fast for this operation. The compiler might have (correctly) reasoned that the repeated call to ``std::pow`` is useless, and optimized it out.
+- 3 ns seems a bit fast for this operation.
+- The compiler might have (correctly) reasoned that the repeated call to ``std::pow`` is useless, and optimized it out.
 
-We can generate the assembly of this function via
+- We can generate the assembly of this function via
 
 ```bash
 clang++ -std=c++14 -O3 -S -masm=intel run_benchmarks.cpp
@@ -133,7 +109,7 @@ clang++ -std=c++14 -O3 -S -masm=intel run_benchmarks.cpp
 
 ---
 
-### Stop compiler optimizations
+# Stop compiler optimizations
 
 We can see all function calls in the assembly via
 
@@ -157,7 +133,7 @@ _Unwind_Resume
 
 ---
 
-### Stop compiler optimizations
+# Stop compiler optimizations
 
 - The compiler's goal is to remove all unnecessary operations from your code
 - Your goal is to do unnecessary operations to see how long a function call takes
@@ -165,12 +141,13 @@ _Unwind_Resume
 
 ---
 
-### Stop compiler optimizations
+# Stop compiler optimizations
 
-This problem is so pervasive that `google/benchmark` has created a function to deal with it: `benchmark::DoNoOptimize`:
+- Benchmarked writes being optimized out is a huge problem. 
+- `google/benchmark` has created a function to deal with it: `benchmark::DoNoOptimize`
 
 ```cpp
-double y
+double y;
 while (state.KeepRunning()) {
     benchmark::DoNotOptimize(y = std::pow(1.2, 1.2));
 }
@@ -178,7 +155,20 @@ while (state.KeepRunning()) {
 
 ---
 
-### Stop compiler optimizations
+# Stop compiler optimizations:
+
+`benchmark::DoNotOptimize` forces the result to be stored into RAM
+
+```cpp
+template <class Tp>
+inline BENCHMARK_ALWAYS_INLINE void DoNotOptimize(Tp const& value) {
+    asm volatile("" : "+m" (const_cast<Tp&>(value)));
+}
+```
+
+---
+
+# Stop compiler optimizations
 
 The purpose of this is to tell the compiler to *not* optimize out the assignment of `y`.
 
@@ -186,9 +176,9 @@ But `benchmark::DoNotOptimize` can't keep the compiler from evaluating `std::pow
 
 ---
 
-### Stop compiler optimizations
+# Stop compiler optimizations
 
-To keep the compiler from evaluating `std::pow(1.2, 1.2)` at compile time, we simply need to ensure that is doesn't *know* what values it needs to evaluate. Here's a solution:
+To keep the compiler from evaluating `std::pow(1.2, 1.2)` at compile time, we simply need to ensure that is doesn't *know* what values it needs to evaluate.
 
 ```cpp
 std::random_device rd;
@@ -202,27 +192,16 @@ while (state.KeepRunning())
     benchmark::DoNotOptimize(y = std::pow(s, t));
 }
 ```
----
 
-### Stop compiler optimizations:
-
-However, `benchmark::DoNotOptimize` forces the result to be stored into RAM, which takes time over register storage:
-
-```cpp
-template <class Tp>
-inline BENCHMARK_ALWAYS_INLINE void DoNotOptimize(Tp const& value) {
-    asm volatile("" : "+m" (const_cast<Tp&>(value)));
-}
-```
 
 ---
 
-### Stop compiler optimizations
+# Stop compiler optimizations
 
 Even then we might still have to play tricks on the compiler. One of my favorites: Write the result to `/dev/null` outside the loop:
 
 ```cpp
-double y
+double y;
 while (state.KeepRunning()) {
     benchmark::DoNotOptimize(y = std::pow(s, t));
 }
@@ -232,7 +211,7 @@ cnull << y;
 
 ---
 
-#### Stop compiler optimizations: Full boilerplate
+# Full boilerplate
 
 ```cpp
 
@@ -261,11 +240,12 @@ BENCHMARK_MAIN();
 
 ---
 
-### Stop compiler optimizations
+# Stop compiler optimizations
 
 Now our timings are more in line with our expectations:
 
 ```bash
+$ ./run_benchmarks.x
 Run on (1 X 2300 MHz CPU )
 2016-06-24 20:11:40
 Benchmark           Time           CPU Iterations
@@ -275,13 +255,13 @@ BM_Pow             80 ns         80 ns    9210526
 
 ---
 
-### Templated Benchmarks
+# Templated Benchmarks
 
 It's often useful to find out how fast your algorithm is in float, double, and long double precision. Google benchmark supports templates without too much code duplication
 
 ---
 
-### Templated Benchmarks
+# Templated Benchmarks
 
 
 ```cpp
@@ -306,11 +286,12 @@ BENCHMARK_TEMPLATE(BM_PowTemplate, long double);
 
 ---
 
-### Templated Benchmarks
+# Templated Benchmarks
 
 The results are sometimes surprising; for instance double is found to be faster than float:
 
 ```bash
+$ ./run_benchmarks.x
 Run on (1 X 2300 MHz CPU )
 2016-06-25 00:07:26
 Benchmark                            Time           CPU Iterations
@@ -322,9 +303,9 @@ BM_PowTemplate<long double>        404 ns        403 ns    1699029
 
 ---
 
-### View algorithm scaling
+# Determine asymptotic scaling
 
-Sometimes you need to analysis the scaling properties of your algorithm. Let's try an example with an algorithm with terrible scaling: Recursive Fibonnaci numbers:
+Recursive Fibonnaci numbers:
 
 ```cpp
 uint64_t fibr(uint64_t n)
@@ -341,9 +322,7 @@ uint64_t fibr(uint64_t n)
 
 ---
 
-### View algorithm scaling
-
-Our benchmark code is
+# Determine asymptotic scaling
 
 ```cpp
 static void BM_FibRecursive(benchmark::State& state)
@@ -351,7 +330,7 @@ static void BM_FibRecursive(benchmark::State& state)
     uint64_t y;
     while (state.KeepRunning())
     {
-      benchmark::DoNotOptimize(y = fib1(state.range_x()));
+      benchmark::DoNotOptimize(y = fibr(state.range_x()));
     }
     std::ostream cnull(nullptr);
     cnull << y;
@@ -362,7 +341,7 @@ BENCHMARK(BM_FibRecursive)->RangeMultiplier(2)->Range(1, 1<<5);
 
 ---
 
-### View algorithm scaling
+# Determine asymptotic scaling
 
 ```cpp
 BENCHMARK(BM_FibRecursive)->RangeMultiplier(2)->Range(1, 1<<5)
@@ -372,7 +351,7 @@ will request a benchmark with `state.range_x()` taking values of `[1, 2, 4, 8, 1
 
 ---
 
-### View algorithm scaling
+# Determine asymptotic scaling
 
 
 ```bash
@@ -390,7 +369,7 @@ BM_FibRecursive/32            24372253 ns   24320000 ns         25
 
 ---
 
-### View algorithm scaling
+# Determine asymptotic scaling
 
 Can we empirically determine the asymptotic complexity of the recursive Fibonacci number calculation?
 
@@ -399,31 +378,23 @@ Pretty much . . . !
 
 ---
 
-### View algorithm scaling
+# Determine asymptotic scaling
 
-google/benchmark will try to figure out the algorithmic scaling, if you ask it to. Example:
+google/benchmark will try to figure out the asymptotic scaling, if add a `Complexity()` call:
 
 ```cpp
-static void BM_FibRecursive(benchmark::State& state)
-{
-    uint64_t y;
-    while (state.KeepRunning())
-    {
-      benchmark::DoNotOptimize(y = fib1(state.range_x()));
-    }
-    std::ostream cnull(nullptr);
-    cnull << y;
-    state.SetComplexityN(state.range_x());
-}
-
-BENCHMARK(BM_FibRecursive)->RangeMultiplier(2)->Range(1, 1<<5)->Complexity();
+BENCHMARK(BM_FibRecursive)
+    ->RangeMultiplier(2)
+        ->Range(1, 1<<5)
+            ->Complexity();
 ```
 
 ---
 
-### The result?
+# Result
 
 ```bash
+$ ./run_benchmarks.x
 BM_FibRecursive/1                         9 ns          9 ns   72916667
 BM_FibRecursive/2                        19 ns         19 ns   44871795
 BM_FibRecursive/4                        42 ns         43 ns   14112903
@@ -439,7 +410,7 @@ It erroneously labels the algorithm as cubic; though we can see the fit is not t
 
 ---
 
-### Passing a lambda to `Complexity()`
+# Pass a lambda to `Complexity()`
 
 If google/benchmark only tries to fit to the most common complexity classes. You are free to specify the asymptotic complexity yourself, and have google/benchmark determine goodness of fit.
 
@@ -448,7 +419,7 @@ The complexity of the recursive Fibonacci algorithm is $$\phi^n$$, where $$\phi 
 
 ---
 
-### Passing a lambda to `Complexity()`
+# Pass a lambda to `Complexity()`
 
 Syntax:
 
@@ -462,7 +433,7 @@ BENCHMARK(BM_FibRecursive)
 
 ---
 
-### Result:
+# google/benchmark nails it:
 
 ```bash
 BM_FibRecursive/1           9 ns          9 ns   79545455
@@ -479,7 +450,7 @@ BM_FibRecursive_RMS          0 %          0 %
 
 ---
 
-###  Other tricks:
+#  Other tricks:
 
 Standard complexity classes don't need to be passed as lambdas:
 
@@ -495,9 +466,9 @@ Complexity(benchmark::oNCubed);
 
 ---
 
-### Benchmarking data transfer
+# Benchmarking data transfer
 
-To get data about data transfer rates, use `state.SetBytesProcessed`[^1]:
+Use `state.SetBytesProcessed`[^1]:
 
 
 ```cpp
@@ -520,7 +491,7 @@ BENCHMARK(BM_memcpy)->Range(8, 8<<10);
 ---
 
 
-### Benchmarking data transfer
+# Benchmarking data transfer
 
 `state.SetBytesProcessed` adds another column to the output:
 
@@ -545,13 +516,11 @@ BM_memcpy/8k          220 ns        220 ns    3240741    34.726GB/s
 
 ---
 
-### Running a subset of your benchmarks:
+# Run a subset of the benchmarks
 
-
-Each benchmark takes ~1 second to run. If you need to analyze only one of the benchmarks, use the `--benchmark_filter` option:
 
 ```bash
-./run_benchmarks.x --benchmark_filter=BM_memcpy/32
+$ ./run_benchmarks.x --benchmark_filter=BM_memcpy/32
 Run on (1 X 2300 MHz CPU )
 2016-06-25 19:34:24
 Benchmark              Time           CPU Iterations
@@ -564,9 +533,10 @@ BM_memcpy/32k       1834 ns       1837 ns     357143   16.6145GB/s
 
 ---
 
-### Error bars
+# Error bars
 
-In general you will get a pretty good idea about the standard deviation of the measurements just by running it a few times. However, if you want error bars, just specify the number of times you want your benchmark repeated:
+- In general you will get a pretty good idea about the standard deviation of the measurements just by running it a few times. 
+- However, if you want error bars, just specify the number of times you want your benchmark repeated:
 
 ```cpp
 BENCHMARK(BM_Pow)->Repetitions(12);
@@ -574,7 +544,7 @@ BENCHMARK(BM_Pow)->Repetitions(12);
 
 ---
 
-### Error bars
+# Error bars
 
 
 ```cpp
@@ -597,6 +567,45 @@ BM_Pow/repeats:12                76 ns         75 ns   10294118
 BM_Pow/repeats:12_mean           72 ns         72 ns   10294118
 BM_Pow/repeats:12_stddev          2 ns          2 ns          0
 ```
+
+
+---
+
+# google/benchmark gotchas
+
+If you have CPU frequency scaling enabled (think laptops with power saving), then the `Time` column can get inaccurate:
+
+```bash
+Run on (1 X 2300 MHz CPU )
+2016-06-25 19:57:40
+Benchmark                         Time           CPU Iterations
+---------------------------------------------------------------
+```
+
+Next run:
+
+```bash
+Run on (1 X 2750 MHz CPU )
+2016-06-25 19:57:40
+Benchmark                         Time           CPU Iterations
+---------------------------------------------------------------
+```
+
+---
+
+# google/benchmark gotchas
+
+I suspect negative wall times are due to the CPU frequency changing during the course of computation.
+
+Unfortunately, at the time of this writing, this issue is unresolved.
+
+
+
+
+
+
+
+
 
 
 
