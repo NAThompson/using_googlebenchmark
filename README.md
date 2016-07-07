@@ -452,8 +452,6 @@ BM_FibRecursive_RMS          0 %          0 %
 
 ---
 
-#  Other tricks:
-
 Standard complexity classes don't need to be passed as lambdas:
 
 ```cpp
@@ -465,7 +463,9 @@ Complexity(benchmark::oNSquared);
 Complexity(benchmark::oNCubed);
 ```
 
-These arguments force a regression against the specified complexity class.
+- These arguments force a regression against the specified complexity class.
+
+- Passing them explicitly is a bad idea, because the best fit is computed among them if they aren't passed.
 
 ---
 
@@ -574,9 +574,7 @@ BM_Pow/repeats:12_stddev          2 ns          2 ns          0
 
 ---
 
-# google/benchmark gotchas
-
-If you have CPU frequency scaling enabled (think laptops with power saving), then the `Time` column can get inaccurate:
+Gotcha: If you have CPU frequency scaling enabled (think laptops with power saving), then the `Time` column can get inaccurate:
 
 ```bash
 Run on (1 X 2300 MHz CPU )
