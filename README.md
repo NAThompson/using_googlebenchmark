@@ -412,9 +412,11 @@ It erroneously labels the algorithm as cubic; though we can see the fit is not t
 
 # Pass a lambda to `Complexity()`
 
-If google/benchmark only tries to fit to the most common complexity classes. You are free to specify the asymptotic complexity yourself, and have google/benchmark determine goodness of fit.
+- google/benchmark only tries to fit to the most common complexity classes. 
 
-The complexity of the recursive Fibonacci algorithm is $$\phi^n$$, where $$\phi := (1+\sqrt{5})/2$$ is the golden ratio, so let's use $$\phi^n$$ as a lambda . . .
+- You are free to specify the asymptotic complexity yourself, and have google/benchmark determine goodness of fit.
+
+- The complexity of the recursive Fibonacci algorithm is $$\phi^n$$, where $$\phi := (1+\sqrt{5})/2$$ is the golden ratio, so let's use $$\phi^n$$ as a lambda . . .
 
 
 ---
@@ -463,6 +465,7 @@ Complexity(benchmark::oNSquared);
 Complexity(benchmark::oNCubed);
 ```
 
+These arguments force a regression against the specified complexity class.
 
 ---
 
@@ -580,15 +583,17 @@ Run on (1 X 2300 MHz CPU )
 2016-06-25 19:57:40
 Benchmark                         Time           CPU Iterations
 ---------------------------------------------------------------
+BM_Pow/repeats:12                -10 ns         70 ns   10294118
 ```
 
 Next run:
 
 ```bash
 Run on (1 X 2750 MHz CPU )
-2016-06-25 19:57:40
+2016-06-25 19:57:50
 Benchmark                         Time           CPU Iterations
 ---------------------------------------------------------------
+BM_Pow/repeats:12                 60 ns         70 ns   10294118
 ```
 
 ---
